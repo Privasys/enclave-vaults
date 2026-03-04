@@ -1,12 +1,12 @@
 # Enclave Vault — Build & Deployment
 
-The Enclave Vault is a special build of [enclave-os-mini](https://github.com/Privasys/enclave-os-mini) that includes only the `enclave-os-vault`, `enclave-os-kvstore`, and `enclave-os-egress` crates to keep the Trusted Computing Base (TCB) as small as possible.
+The Enclave Vault is a build of [enclave-os-mini](https://github.com/Privasys/enclave-os-mini) with the `vault` module enabled.  This pulls in `enclave-os-vault`, `enclave-os-kvstore`, and `enclave-os-egress` — keeping the Trusted Computing Base (TCB) as small as possible.
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────┐
-│  SGX Enclave (enclave-os-mini, vault mode)       │
+│  SGX Enclave (enclave-os-mini, --features vault) │
 │                                                  │
 │  ┌─────────────┐  ┌───────────────────────────┐  │
 │  │  RA-TLS     │  │  VaultModule              │  │
@@ -24,7 +24,8 @@ The Enclave Vault is a special build of [enclave-os-mini](https://github.com/Pri
 │         │         └───────────────────────────┘  │
 │         │                                        │
 │  ┌──────▼─────────────────────────────────────┐  │
-│  │  enclave-os-mini kernel (protocol, ecalls) │  │
+│  │  EgressModule (outbound HTTPS + RA-TLS)    │  │
+│  │  enclave-os-mini core  (protocol, ecalls)  │  │
 │  └─────────────────────┬──────────────────────┘  │
 │                        │ (egress via OCALLs)     │
 └────────────────────────┼─────────────────────────┘
@@ -35,90 +36,165 @@ The Enclave Vault is a special build of [enclave-os-mini](https://github.com/Pri
             │  (as.privasys.org +    │
             │   customer servers)    │
             └────────────────────────┘
-                    Minimal TCB
 ```
+
+## How It Works
+
+The enclave-os-mini crate uses **composable Cargo features** to control which
+modules are compiled in.  The `vault` feature implies `kvstore` + `egress`, so
+a single CMake flag enables the entire vault stack:
+
+```bash
+cmake -DENABLE_VAULT=ON …
+```
+
+At startup, the default `ecall_run` registers:
+
+1. **EgressModule** — outbound HTTPS, attestation server URLs, hashed into
+   config Merkle tree (OID `1.3.6.1.4.1.65230.2.4`)
+2. **KvStoreModule** — sealed KV store with MRENCLAVE-bound master key
+3. **VaultModule** — policy-gated secret storage (JWT + Mutual RA-TLS)
+
+Features compose freely — `-DENABLE_VAULT=ON -DENABLE_WASM=ON` would give
+you a vault *and* WASM runtime in the same enclave.
+
+### Advanced: Custom Composition Crate
+
+For fully custom `ecall_run` logic, use `CUSTOM_ENCLAVE_DIR` instead:
+
+```bash
+cmake -DCUSTOM_ENCLAVE_DIR=/path/to/my-custom-enclave …
+```
+
+The external crate must depend on `enclave-os-enclave` with
+`default-features = false, features = ["sgx"]` and provide its own
+`#[no_mangle] pub extern "C" fn ecall_run(…)`.
+
+An example composition crate is provided in [`vault/enclave/`](enclave/).
+
+## Prerequisites
+
+| Tool | Version | Install |
+|------|---------|---------|
+| Intel SGX SDK + PSW | 2.25+ | See [OVH install guide](../install/OVH%20Cloud.md) |
+| Rust | nightly-2025-12-01 | `rustup install nightly-2025-12-01` |
+| rust-src | — | `rustup component add rust-src --toolchain nightly-2025-12-01` |
+| CMake | 3.16+ | `sudo apt install cmake` |
+| Build tools | — | `sudo apt install build-essential pkg-config` |
 
 ## Building
 
-### Prerequisites
-
-- Intel SGX SDK and PSW installed
-- Rust nightly toolchain with the Privasys fork of [Apache Teaclave SGX SDK](https://github.com/apache/incubator-teaclave-sgx-sdk)
-- The enclave-os-mini source code
-
-### Build Steps
+### 1. Clone the repository
 
 ```bash
-# Clone enclave-os-mini
 git clone git@github.com:Privasys/enclave-os-mini.git
 cd enclave-os-mini
-
-# Checkout the vault build configuration
-# The vault build disables WASM and enables only vault + kvstore modules
-
-# Build for SGX
-make SGX=1 VAULT=1 WASM=0
-
-# The output is the signed enclave binary
-ls -la target/release/enclave-os-vault.signed.so
 ```
 
-### Configuration
+### 2. Build with CMake
 
-The vault enclave reads its configuration at startup:
-
-```json
-{
-    "modules": ["kvstore", "vault"],
-    "vault_jwt_pubkey_hex": "04<x-coord-hex><y-coord-hex>",
-    "port": 8443,
-    "attestation_servers": [
-        "https://as.privasys.org/verify"
-    ],
-    "registry": {
-        "url": "https://registry.enclave-vaults.example.com/api/register",
-        "heartbeat_interval_seconds": 30
-    }
-}
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_VAULT=ON
+cmake --build build -j$(nproc)
 ```
 
-| Field | Description |
-|-------|-------------|
-| `modules` | Only `kvstore` and `vault` — no `wasm` |
-| `vault_jwt_pubkey_hex` | Uncompressed P-256 public key (65 bytes hex) of the secret owner |
-| `port` | Listen port for RA-TLS connections |
-| `attestation_servers` | Attestation server URLs for quote verification (default: `as.privasys.org`). Supports all TEE types. Add customer servers for multi-party trust. |
-| `registry.url` | Attested Registry registration endpoint |
-| `registry.heartbeat_interval_seconds` | How often to send heartbeats |
+This produces two files in `build/bin/`:
 
-## Running Multiple Instances
+| File | Description |
+|------|-------------|
+| `enclave-os-host` | Untrusted host binary (loads the enclave, manages TCP proxy, KV store) |
+| `enclave.signed.so` | Signed SGX enclave with vault + kvstore + egress modules |
 
-Each vault instance must:
-1. Run on a unique port
-2. Have its own enclave process (separate sealed storage)
-3. Register itself with the Attested Registry
+### 3. Extract MRENCLAVE
 
-### Launch script
+```bash
+sgx_sign dump -enclave build/bin/enclave.signed.so -dumpfile /dev/stdout \
+    | grep "mr_enclave"
+```
+
+Record this value — it's used in:
+- Secret policies (restrict which enclaves can access secrets)
+- Client verification (ensure you're talking to the correct vault binary)
+- Registry configuration (verify vault registrations)
+- GitHub releases (so users can verify reproducible builds)
+
+## Configuration
+
+### Host CLI flags
+
+```bash
+./enclave-os-host \
+    --enclave-path enclave.signed.so \
+    --port 8443 \
+    --kv-path ./kvdata \
+    --ca-cert /path/to/ca.crt \
+    --ca-key /path/to/ca.key \
+    --egress-ca-bundle /etc/ssl/certs/ca-certificates.crt \
+    --attestation-servers "https://as.privasys.org/verify"
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--enclave-path` / `-e` | No (default: `enclave.signed.so`) | Path to the signed enclave |
+| `--port` / `-p` | No (default: 443) | RA-TLS listen port |
+| `--kv-path` / `-k` | No (default: `./kvdata`) | Directory for sealed KV store data |
+| `--ca-cert` | **First run** | Intermediary CA certificate (DER or PEM). Sealed to disk for restarts. |
+| `--ca-key` | **First run** | Intermediary CA private key (PKCS#8 DER or PEM). Sealed to disk for restarts. |
+| `--egress-ca-bundle` | No | PEM bundle of trusted root CAs for outbound HTTPS |
+| `--attestation-servers` | No | Comma-separated attestation server URLs |
+| `--debug` / `-d` | No | Enable debug logging |
+
+> **Note:** `--ca-cert` and `--ca-key` are only required on first run. The
+> enclave seals them to disk (MRENCLAVE-bound AES-256-GCM) and reads them
+> automatically on subsequent restarts.
+
+## Running
+
+### Single instance
+
+```bash
+cd build/bin
+./enclave-os-host \
+    --enclave-path enclave.signed.so \
+    --port 8443 \
+    --ca-cert /etc/enclave-vaults/ca.crt \
+    --ca-key /etc/enclave-vaults/ca.key \
+    --egress-ca-bundle /etc/ssl/certs/ca-certificates.crt \
+    --attestation-servers "https://as.privasys.org/verify"
+```
+
+### Multiple instances
+
+Each vault instance needs a unique port and its own KV store directory:
 
 ```bash
 #!/bin/bash
 # launch-vaults.sh — start N vault instances on consecutive ports
 BASE_PORT=${1:-8443}
-COUNT=${2:-10}
-CONFIG_TEMPLATE="vault/config/vault.json"
-REGISTRY_URL="https://registry.enclave-vaults.example.com/api/register"
+COUNT=${2:-2}
+ENCLAVE="enclave.signed.so"
+CA_CERT="/etc/enclave-vaults/ca.crt"
+CA_KEY="/etc/enclave-vaults/ca.key"
+EGRESS_CA="/etc/ssl/certs/ca-certificates.crt"
+ATTEST_SERVERS="https://as.privasys.org/verify"
 
 for i in $(seq 0 $((COUNT - 1))); do
     PORT=$((BASE_PORT + i))
-    echo "Starting vault instance $i on port $PORT..."
-    
-    # Generate instance config with unique port
-    jq --arg port "$PORT" '.port = ($port | tonumber)' "$CONFIG_TEMPLATE" > "/tmp/vault-$PORT.json"
-    
-    ./target/release/enclave-os-mini \
-        --config "/tmp/vault-$PORT.json" \
+    KV_DIR="./kvdata-${PORT}"
+    mkdir -p "$KV_DIR"
+
+    echo "Starting vault instance on port $PORT (kv: $KV_DIR)..."
+
+    ./enclave-os-host \
+        --enclave-path "$ENCLAVE" \
+        --port "$PORT" \
+        --kv-path "$KV_DIR" \
+        --ca-cert "$CA_CERT" \
+        --ca-key "$CA_KEY" \
+        --egress-ca-bundle "$EGRESS_CA" \
+        --attestation-servers "$ATTEST_SERVERS" \
         &
-    
+
     echo "  PID: $!"
 done
 
@@ -127,8 +203,6 @@ wait
 ```
 
 ### Systemd service (per-instance)
-
-Create a template service:
 
 ```ini
 # /etc/systemd/system/enclave-vault@.service
@@ -139,34 +213,55 @@ Requires=aesmd.service
 
 [Service]
 Type=simple
-ExecStart=/opt/enclave-vaults/enclave-os-mini --config /etc/enclave-vaults/vault-%i.json
+ExecStart=/opt/enclave-vaults/enclave-os-host \
+    --enclave-path /opt/enclave-vaults/enclave.signed.so \
+    --port %i \
+    --kv-path /var/lib/enclave-vaults/kvdata-%i \
+    --egress-ca-bundle /etc/ssl/certs/ca-certificates.crt \
+    --attestation-servers "https://as.privasys.org/verify"
 Restart=always
 RestartSec=5
+WorkingDirectory=/opt/enclave-vaults
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Enable instances:
+Enable and start instances:
 
 ```bash
-sudo systemctl enable enclave-vault@8443
-sudo systemctl enable enclave-vault@8444
-# ... etc
-sudo systemctl start enclave-vault@{8443..8452}
+sudo systemctl enable enclave-vault@8443 enclave-vault@8444
+sudo systemctl start enclave-vault@8443 enclave-vault@8444
 ```
 
-## Verifying the Build
+## Verifying with RA-TLS Clients
 
-After building, note the MRENCLAVE value:
+Once the vault is running, test connectivity with the [ra-tls-clients](https://github.com/Privasys/ra-tls-clients) suite:
 
 ```bash
-# Extract MRENCLAVE from the signed enclave
-sgx_sign dump -enclave target/release/enclave-os-vault.signed.so -dumpfile /dev/stdout \
-    | grep "mr_enclave"
+# Go client
+cd ra-tls-clients/go
+go run . -addr <server>:8443
+
+# TypeScript client
+cd ra-tls-clients/typescript
+npx ts-node ratls_client.ts <server>:8443
+
+# Python client
+cd ra-tls-clients/python
+python ratls_client.py <server>:8443
 ```
 
-This value should be used in:
-1. The Attested Registry (to verify vault registrations)
-2. Secret policies (to restrict which vaults can access secrets)
-3. Client verification (to ensure you're talking to the correct vault binary)
+## Repository Structure
+
+```
+vault/
+├── README.md                 # This file
+├── config/
+│   └── vault.json            # Template configuration
+└── enclave/                  # (Optional) external composition crate example
+    ├── Cargo.toml
+    ├── build.rs
+    └── src/
+        └── lib.rs            # Custom ecall_run for advanced use cases
+```

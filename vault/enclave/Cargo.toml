@@ -1,0 +1,43 @@
+# Copyright (c) Privasys. All rights reserved.
+# Licensed under the GNU Affero General Public License v3.0. See LICENSE file for details.
+
+[package]
+name = "enclave-os-vault-app"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0"
+description = "Vault composition crate — custom ecall_run that registers Egress + KvStore + Vault modules."
+
+# Produces a static library that gets linked into the enclave .so.
+# The rlib target is also needed for Cargo dependency resolution.
+[lib]
+name = "enclave_os_vault_app"
+crate-type = ["staticlib", "rlib"]
+
+[features]
+default = ["sgx"]
+sgx = []
+
+[dependencies]
+# Core enclave library — WITHOUT default-ecall (we provide our own ecall_run)
+enclave-os-enclave = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.2.0", default-features = false, features = ["sgx"] }
+enclave-os-common  = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.2.0" }
+
+# Modules — vault + kvstore + egress (minimal TCB, no WASM)
+enclave-os-vault   = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.2.0" }
+enclave-os-kvstore = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.2.0" }
+enclave-os-egress  = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.2.0" }
+
+# Serialization (parse attestation_servers from config JSON)
+serde_json = "1"
+
+# Pin transitive deps that shipped edition2024 (requires Rust 1.85+)
+time-core = ">=0.1, <0.1.8"
+
+[build-dependencies]
+cc = "1"
+
+[profile.release]
+opt-level = "s"        # optimize for size
+codegen-units = 1       # single CGU → better inlining, smaller binary
+strip = "symbols"       # strip debug symbols from .a

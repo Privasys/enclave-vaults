@@ -43,8 +43,15 @@ Edit `/etc/sgx_default_qcnl.conf` to point to Intel's PCS:
 ### 4. Deploy Vault Instances
 
 ```bash
-# Copy the vault binary
-scp target/release/enclave-os-mini user@sgx-server:/opt/enclave-vaults/
+# Build enclave-os-mini with the vault module enabled
+git clone git@github.com:Privasys/enclave-os-mini.git
+cd enclave-os-mini
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_VAULT=ON
+cmake --build build -j$(nproc)
+
+# Copy binaries to the server
+scp build/bin/enclave-os-host build/bin/enclave.signed.so \
+    user@sgx-server:/opt/enclave-vaults/
 
 # Copy configuration
 scp vault/config/vault.json user@sgx-server:/etc/enclave-vaults/vault-template.json
@@ -74,13 +81,13 @@ If OVH offers TDX-capable instances in your region:
                     Internet
                        │
             ┌──────────▼──────────┐
-            │  Load Balancer /     │
+            │  Load Balancer /    │
             │  Caddy (RA-TLS)     │
             └──────────┬──────────┘
                        │
          ┌─────────────┼─────────────┐
          │             │             │
-   ┌─────▼─────┐ ┌────▼──────┐ ┌───▼───────┐
+   ┌─────▼─────┐ ┌─────▼─────┐ ┌─────▼─────┐
    │ OVH SGX   │ │ GCP TDX   │ │ OVH SGX   │
    │ Server    │ │ VM        │ │ Server 2  │
    │           │ │           │ │           │
