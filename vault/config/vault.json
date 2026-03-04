@@ -1,0 +1,9 @@
+{
+    "modules": ["kvstore", "vault"],
+    "vault_jwt_pubkey_hex": "",
+    "port": 8443,
+    "registry": {
+        "url": "",
+        "heartbeat_interval_seconds": 30
+    }
+}
