@@ -9,20 +9,20 @@ Part of the [Privasys](https://privasys.org) Confidential Computing platform.
 ## How It Works
 
 ```
-                        ┌──────────────────────────┐
-                        │   Attested Registry      │
-  Vault Client --------►│   (enclave-os-virtual)   │◄-------- GET /api/vaults
-  split secret          │   TDX Confidential VM    │
-  into N shares         └──────────┬───────────────┘
-                          register │ + quote verify
-         ┌────────────────┬────────┴──┬────────────────┐
-         │                │           │                │
-   ┌─────▼─────┐   ┌─────▼─────┐ ┌───▼───────┐  ┌────▼──────┐
-   │ Vault #1  │   │ Vault #2  │ │ Vault #3  │  │ Vault #N  │
-   │ SGX 8443  │   │ SGX 8444  │ │ SGX 8445  │  │ SGX 845x  │
-   │ share[1]  │   │ share[2]  │ │ share[3]  │  │ share[N]  │
-   └───────────┘   └───────────┘ └───────────┘  └───────────┘
-         enclave-os-mini (using enclave-os-vault crate)
+                      ┌──────────────────────────┐
+                      │  Attested Registry       │
+  Vault Client ------►│  (Enclave OS (Virtual))  │◄------ GET /api/vaults
+  split secret        │  TDX Confidential VM     │
+  into N shares       └────────────┬─────────────┘
+                        register + │ quote verify
+             ┌──────────────┬──────┴───────┬──────────────┐
+             │              │              │              │
+       ┌─────▼─────┐  ┌─────▼─────┐  ┌─────▼─────┐  ┌─────▼─────┐
+       │ Vault #1  │  │ Vault #2  │  │ Vault #3  │  │ Vault #N  │
+       │ SGX 8443  │  │ SGX 8444  │  │ SGX 8445  │  │ SGX 845x  │
+       │ share[1]  │  │ share[2]  │  │ share[3]  │  │ share[N]  │
+       └───────────┘  └───────────┘  └───────────┘  └───────────┘
+             Enclave OS (Mini), using Enclave OS Vault crate
 ```
 
 1. **Secret Owner** uses the [Enclave Vaults Client](https://github.com/Privasys/enclave-vaults-client) to split a secret into N shares (Shamir Secret Sharing, threshold K-of-N).
@@ -55,13 +55,13 @@ The trade-off: SGX's security guarantees are weaker than HSM hardware (side-chan
 
 ```
 enclave-vaults/
-├── registry/              # Attested Registry (Go, runs on enclave-os-virtual)
+├── registry/              # Attested Registry (Go, runs on Enclave OS (Virtual))
 │   ├── main.go            # HTTP server: register, heartbeat, list vaults
 │   ├── attestation.go     # Quote verification via attestation server
 │   └── main_test.go       # Unit tests
 ├── vault/                 # Enclave Vault build configuration
 │   ├── README.md          # Vault build and deployment guide
-│   └── config/            # enclave-os-mini configuration for vault mode
+│   └── config/            # Enclave OS (Mini) configuration for vault mode
 ├── docs/
 │   ├── architecture.md    # Detailed architecture documentation
 │   ├── deployment.md      # End-to-end deployment guide
@@ -84,7 +84,7 @@ A lightweight Go HTTP service that provides service discovery for vault constell
 | `/api/vaults` | GET | List all active vaults with measurements |
 | `/api/health` | GET | Health check |
 
-The registry runs inside an [enclave-os-virtual](https://github.com/Privasys/enclave-os-virtual) TDX Confidential VM with instance-specific sealing. When scaling requires multiple registry VMs, the data can be sourced from the vault constellation itself.
+The registry runs inside an [Enclave OS (Virtual)](https://github.com/Privasys/enclave-os-virtual) TDX Confidential VM with instance-specific sealing. When scaling requires multiple registry VMs, the data can be sourced from the vault constellation itself.
 
 **Configuration** (environment variables):
 
@@ -97,7 +97,7 @@ The registry runs inside an [enclave-os-virtual](https://github.com/Privasys/enc
 
 ### Enclave Vault
 
-Each vault is an instance of [enclave-os-mini](https://github.com/Privasys/enclave-os-mini). it is light, only built with the `enclave-os-vault` crate, keeping the Trusted Computing Base (TCB) as small as possible.
+Each vault is an instance of [Enclave OS (Mini)](https://github.com/Privasys/enclave-os-mini). it is light, only built with the `enclave-os-vault` crate, keeping the Trusted Computing Base (TCB) as small as possible.
 
 The vault stores Shamir shares in a sealed KV store (AES-256-GCM, MRENCLAVE-bound). Access is controlled by per-secret policies enforced inside the enclave.
 
@@ -142,11 +142,11 @@ vault-client get \
 
 | Project | Description |
 |---------|-------------|
-| [enclave-os-mini](https://github.com/Privasys/enclave-os-mini) | SGX enclave OS (Rust) — the runtime for each vault |
-| [enclave-os-virtual](https://github.com/Privasys/enclave-os-virtual) | TDX Confidential VM OS — the runtime for the registry |
-| [attestation-server](https://github.com/Privasys/attestation-server) | TEE-agnostic attestation verification service (SGX, TDX, SEV-SNP, NVIDIA, ARM CCA) |
+| [Enclave OS (Mini)](https://github.com/Privasys/enclave-os-mini) | SGX enclave OS (Rust) — the runtime for each vault |
+| [Enclave OS (Virtual)](https://github.com/Privasys/enclave-os-virtual) | TDX Confidential VM OS — the runtime for the registry |
+| [Attestation Server](https://github.com/Privasys/attestation-server) | TEE-agnostic attestation verification service (SGX, TDX, SEV-SNP, NVIDIA, ARM CCA) |
 | [ra-tls-caddy](https://github.com/Privasys/ra-tls-caddy) | RA-TLS Caddy module for TLS termination |
-| [enclave-vaults-client](https://github.com/Privasys/enclave-vaults-client) | Client SDK (Go, Rust) for interacting with vault constellations |
+| [Enclave Vaults client](https://github.com/Privasys/enclave-vaults-client) | Client SDK (Go, Rust) for interacting with vault constellations |
 
 ## License
 

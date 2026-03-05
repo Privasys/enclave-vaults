@@ -1,13 +1,13 @@
-# Deploying the Attested Registry to Enclave OS Virtual
+# Deploying the Attested Registry to Enclave OS (Virtual)
 
 This guide walks through building, pushing, and loading the Attested Registry
-container into a running Enclave OS Virtual instance (e.g. `m1`).
+container into a running Enclave OS (Virtual) instance (e.g. `m1`).
 
 ## Prerequisites
 
 | Requirement | Description |
 |-------------|-------------|
-| Running Enclave OS Virtual instance | e.g. `m1` with v0.12.0+ |
+| Running Enclave OS (Virtual) instance | e.g. `m1` with v0.12.0+ |
 | Operations private key | The ECDSA P-256 key matching `/etc/enclave-os/operations.crt` in the image |
 | `gh` CLI | For pushing the container to GHCR |
 | Go 1.22+ | For local testing (optional) |
@@ -88,7 +88,7 @@ print(token)
 
 ## 3. Load the registry container
 
-The Enclave OS Virtual manager API runs on port 9443 (exposed via Caddy on
+The Enclave OS (Virtual) manager API runs on port 9443 (exposed via Caddy on
 :443 with RA-TLS). Use the operations JWT to load the registry:
 
 ```bash
