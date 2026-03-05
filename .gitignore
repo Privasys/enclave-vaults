@@ -5,3 +5,6 @@ registry/dist/
 # IDE
 .idea/
 .vscode/
+
+# Local status tracking
+status.md
