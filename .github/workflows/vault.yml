@@ -1,0 +1,185 @@
+# Copyright (c) Privasys. All rights reserved.
+# Licensed under the GNU Affero General Public License v3.0. See LICENSE file for details.
+#
+# Build the vault enclave binary from enclave-os-mini with -DENABLE_VAULT=ON.
+#
+# Triggers:
+#   - Push a tag matching v*  (e.g. v0.1.0)
+#   - Manual dispatch (with configurable enclave-os-mini ref)
+#
+# Outputs:
+#   - enclave.signed.so     — Signed SGX enclave (vault + kvstore + egress)
+#   - enclave-os-host       — Host binary
+#   - mrenclave.txt         — Hex-encoded MRENCLAVE
+#   - build-manifest.json   — Build metadata (versions, hashes, source refs)
+#   - All artifacts attached to the GitHub Release.
+
+name: Build & Release Vault
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      mini_ref:
+        description: "enclave-os-mini git ref (tag, branch, or SHA)"
+        type: string
+        default: "main"
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────
+  # 1. Build the vault enclave using enclave-os-mini's build infrastructure
+  # ────────────────────────────────────────────────────────────────────────
+  build-vault:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone enclave-os-mini
+        uses: actions/checkout@v4
+        with:
+          repository: Privasys/enclave-os-mini
+          ref: ${{ inputs.mini_ref || 'v0.5.0' }}
+          path: enclave-os-mini
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker build-environment image
+        run: |
+          cd enclave-os-mini
+          docker build -f docker/Dockerfile.build -t enclave-build .
+
+      - name: Build vault enclave in container
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/enclave-os-mini:/src" \
+            -e CARGO_INCREMENTAL=0 \
+            -e SOURCE_DATE_EPOCH=0 \
+            enclave-build \
+            bash -c '
+              set -euo pipefail
+              set +u; source /opt/intel/sgxsdk/environment; set -u
+              export SOURCE_DATE_EPOCH=0 CARGO_INCREMENTAL=0 TZ=UTC LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+              echo "==> Fetching dependencies..."
+              cd /src
+              cargo fetch --locked
+              cargo fetch --locked --manifest-path enclave/Cargo.toml
+
+              echo "==> Configuring CMake (vault)..."
+              cmake -S /src -B /src/build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DENABLE_VAULT=ON \
+                -DCMAKE_C_COMPILER=gcc \
+                -DCMAKE_CXX_COMPILER=g++
+
+              echo "==> Building..."
+              cmake --build /src/build -j$(nproc)
+
+              echo "==> Extracting MRENCLAVE..."
+              MRENCLAVE=$(bash /src/scripts/extract-mrenclave.sh /src/build/bin/enclave.signed.so)
+              echo "${MRENCLAVE}" > /src/build/mrenclave.txt
+              echo "MRENCLAVE: ${MRENCLAVE}"
+            '
+
+      - name: Fix build output permissions
+        run: sudo chown -R "$(id -u):$(id -g)" enclave-os-mini/build/ enclave-os-mini/target/
+
+      - name: Read MRENCLAVE
+        id: mrenclave
+        run: |
+          MRENCLAVE=$(cat enclave-os-mini/build/mrenclave.txt)
+          echo "mrenclave=${MRENCLAVE}" >> "$GITHUB_OUTPUT"
+          echo "## MRENCLAVE" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${MRENCLAVE}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Read enclave-os-mini ref
+        id: mini
+        run: |
+          cd enclave-os-mini
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "ref=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate build manifest
+        run: |
+          cat > enclave-os-mini/build/build-manifest.json <<EOF
+          {
+            "product": "enclave-vaults",
+            "version": "${{ github.ref_name }}",
+            "commit": "${{ github.sha }}",
+            "enclave_os_mini_ref": "${{ steps.mini.outputs.ref }}",
+            "enclave_os_mini_sha": "${{ steps.mini.outputs.sha }}",
+            "modules": ["vault", "kvstore", "egress"],
+            "mrenclave": "$(cat enclave-os-mini/build/mrenclave.txt)",
+            "enclave_so_sha256": "$(sha256sum enclave-os-mini/build/bin/enclave.so | cut -d' ' -f1)",
+            "signed_enclave_sha256": "$(sha256sum enclave-os-mini/build/bin/enclave.signed.so | cut -d' ' -f1)",
+            "host_sha256": "$(sha256sum enclave-os-mini/target/release/enclave-os-host 2>/dev/null | cut -d' ' -f1 || echo 'N/A')",
+            "build_image": "local (from enclave-os-mini/docker/Dockerfile.build)",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          cat enclave-os-mini/build/build-manifest.json
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vault-build
+          path: |
+            enclave-os-mini/build/bin/enclave.signed.so
+            enclave-os-mini/build/mrenclave.txt
+            enclave-os-mini/build/build-manifest.json
+            enclave-os-mini/target/release/enclave-os-host
+
+  # ────────────────────────────────────────────────────────────────────────
+  # 2. Create GitHub Release (only on tag push)
+  # ────────────────────────────────────────────────────────────────────────
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-vault
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: vault-build
+          path: artifacts/
+
+      - name: Read MRENCLAVE
+        id: mrenclave
+        run: echo "mrenclave=$(cat artifacts/enclave-os-mini/build/mrenclave.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Enclave Vaults ${{ github.ref_name }}"
+          body: |
+            ## Enclave Vaults ${{ github.ref_name }}
+
+            ### MRENCLAVE
+            ```
+            ${{ steps.mrenclave.outputs.mrenclave }}
+            ```
+
+            ### Modules
+            - `enclave-os-vault` — OIDC-authenticated secret store
+            - `enclave-os-kvstore` — Sealed KV store (AES-256-GCM)
+            - `enclave-os-egress` — Outbound HTTPS (attestation)
+
+            ### Build Manifest
+            See `build-manifest.json` for full reproducibility metadata
+            (enclave-os-mini ref, hashes, build image).
+          files: |
+            artifacts/enclave-os-mini/build/bin/enclave.signed.so
+            artifacts/enclave-os-mini/build/mrenclave.txt
+            artifacts/enclave-os-mini/build/build-manifest.json
+            artifacts/enclave-os-mini/target/release/enclave-os-host
