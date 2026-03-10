@@ -59,11 +59,12 @@ jobs:
       - name: Build vault enclave in container
         run: |
           docker run --rm \
+            --entrypoint bash \
             -v "${{ github.workspace }}/enclave-os-mini:/src" \
             -e CARGO_INCREMENTAL=0 \
             -e SOURCE_DATE_EPOCH=0 \
             enclave-build \
-            bash -c '
+            -c '
               set -euo pipefail
               set +u; source /opt/intel/sgxsdk/environment; set -u
               export SOURCE_DATE_EPOCH=0 CARGO_INCREMENTAL=0 TZ=UTC LANG=C.UTF-8 LC_ALL=C.UTF-8
