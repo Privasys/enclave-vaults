@@ -156,7 +156,7 @@ jobs:
 
       - name: Read MRENCLAVE
         id: mrenclave
-        run: echo "mrenclave=$(cat artifacts/enclave-os-mini/build/mrenclave.txt)" >> "$GITHUB_OUTPUT"
+        run: echo "mrenclave=$(cat artifacts/build/mrenclave.txt)" >> "$GITHUB_OUTPUT"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -179,7 +179,7 @@ jobs:
             See `build-manifest.json` for full reproducibility metadata
             (enclave-os-mini ref, hashes, build image).
           files: |
-            artifacts/enclave-os-mini/build/bin/enclave.signed.so
-            artifacts/enclave-os-mini/build/mrenclave.txt
-            artifacts/enclave-os-mini/build/build-manifest.json
-            artifacts/enclave-os-mini/target/release/enclave-os-host
+            artifacts/build/bin/enclave.signed.so
+            artifacts/build/mrenclave.txt
+            artifacts/build/build-manifest.json
+            artifacts/target/release/enclave-os-host
