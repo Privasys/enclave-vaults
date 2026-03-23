@@ -41,10 +41,10 @@ jobs:
   build-vault:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Clone enclave-os-mini
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: Privasys/enclave-os-mini
           ref: ${{ inputs.mini_ref || 'v0.14.0' }}
@@ -131,7 +131,7 @@ jobs:
           cat enclave-os-mini/build/build-manifest.json
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vault-build
           path: |
@@ -148,9 +148,9 @@ jobs:
     needs: build-vault
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: vault-build
           path: artifacts/
