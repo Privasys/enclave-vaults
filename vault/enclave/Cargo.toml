@@ -20,13 +20,13 @@ sgx = []
 
 [dependencies]
 # Core enclave library — WITHOUT default-ecall (we provide our own ecall_run)
-enclave-os-enclave = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.14.0", default-features = false, features = ["sgx"] }
-enclave-os-common  = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.14.0" }
+enclave-os-enclave = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.15.0", default-features = false, features = ["sgx"] }
+enclave-os-common  = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.15.0" }
 
 # Modules — vault + kvstore + egress (minimal TCB, no WASM)
-enclave-os-vault   = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.14.0" }
-enclave-os-kvstore = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.14.0" }
-enclave-os-egress  = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.14.0" }
+enclave-os-vault   = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.15.0" }
+enclave-os-kvstore = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.15.0" }
+enclave-os-egress  = { git = "https://github.com/Privasys/enclave-os-mini", tag = "v0.15.0" }
 
 # Serialization (parse attestation_servers from config JSON)
 serde_json = "1"
