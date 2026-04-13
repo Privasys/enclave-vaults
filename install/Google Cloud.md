@@ -52,7 +52,7 @@ gcloud compute instances create enclave-vaults-registry \
 ## 4. Configure Networking
 
 ```bash
-# Allow inbound on port 8080 (or use Caddy + ra-tls-caddy for TLS)
+# Allow inbound on port 8080 (or use Caddy with the RA-TLS module for TLS)
 gcloud compute firewall-rules create allow-registry \
     --project=<PROJECT_ID> \
     --allow=tcp:8080,tcp:443 \
@@ -69,7 +69,7 @@ registry.enclave-vaults.privasys.org  →  <VM_EXTERNAL_IP>
 
 ## 6. TLS with RA-TLS (Caddy)
 
-For production, front the registry with [ra-tls-caddy](https://github.com/Privasys/ra-tls-caddy) so clients can verify the registry's TDX attestation during the TLS handshake:
+For production, front the registry with Caddy's RA-TLS module so clients can verify the registry's TDX attestation during the TLS handshake:
 
 ```caddy
 registry.enclave-vaults.privasys.org {

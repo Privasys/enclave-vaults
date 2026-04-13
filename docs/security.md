@@ -93,4 +93,4 @@ By excluding the WASM runtime, the vault's TCB is significantly smaller than a g
 | Intel TDX CPU | — | Hardware root of trust |
 | enclave-os-virtual | ~3K LoC (Go) | TDX boot, container launcher, Merkle tree |
 | Registry service | ~300 LoC (Go) | HTTP server, vault store, attestation verification |
-| Caddy + ra-tls-caddy | — | RA-TLS TLS termination |
+| Caddy RA-TLS module | — | RA-TLS TLS termination |

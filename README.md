@@ -143,9 +143,8 @@ vault-client get \
 | Project | Description |
 |---------|-------------|
 | [Enclave OS (Mini)](https://github.com/Privasys/enclave-os-mini) | SGX enclave OS (Rust) — the runtime for each vault |
-| [Enclave OS (Virtual)](https://github.com/Privasys/enclave-os-virtual) | TDX Confidential VM OS — the runtime for the registry |
+| [Enclave OS (Virtual)](https://github.com/Privasys/enclave-os-virtual) | TDX Confidential VM OS - the runtime for the registry |
 | [Attestation Server](https://github.com/Privasys/attestation-server) | TEE-agnostic attestation verification service (SGX, TDX, SEV-SNP, NVIDIA, ARM CCA) |
-| [ra-tls-caddy](https://github.com/Privasys/ra-tls-caddy) | RA-TLS Caddy module for TLS termination |
 | [Enclave Vaults client](https://github.com/Privasys/enclave-vaults-client) | Client SDK (Go, Rust) for interacting with vault constellations |
 
 ## License
