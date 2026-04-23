@@ -1,7 +1,12 @@
 {
     "port": 8443,
-    "vault_jwt_pubkey_hex": "",
+    "oidc": {
+        "issuer": "https://privasys.id",
+        "audience": "privasys-platform",
+        "jwks_uri": "https://privasys.id/jwks"
+    },
     "attestation_servers": [
         "https://as.privasys.org/verify"
-    ]
+    ],
+    "egress_ca_bundle_hex": ""
 }

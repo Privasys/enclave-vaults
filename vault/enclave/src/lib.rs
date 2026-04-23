@@ -4,14 +4,40 @@
 //! Vault composition crate — custom `ecall_run` for the Enclave Vault.
 //!
 //! This replaces the default HelloWorld `ecall_run` with one that registers
-//! only the modules needed for a minimal secret-store vault:
+//! only the modules needed for a minimal vault:
 //!
 //! 1. **EgressModule** — outbound HTTPS for attestation server verification
 //! 2. **KvStoreModule** — AES-256-GCM sealed key-value store
-//! 3. **VaultModule** — policy-gated secret storage (JWT + mRA-TLS)
+//! 3. **VaultModule** — PKCS#11/KMIP-shaped key store with per-key policy,
+//!    approval tokens, pending profiles, and audit log (enclave-os-mini
+//!    v0.19+).
 //!
 //! No WASM runtime is included, keeping the Trusted Computing Base as small
 //! as possible.
+//!
+//! ## Required runtime config
+//!
+//! Authentication is enforced via OIDC. The boot config JSON MUST include
+//! the standard `oidc` block (see `EnclaveConfig` in enclave-os-mini):
+//!
+//! ```json
+//! {
+//!   "port": 8443,
+//!   "oidc": {
+//!     "issuer":   "https://privasys.id",
+//!     "audience": "privasys-platform",
+//!     "jwks_uri": "https://privasys.id/jwks"
+//!   },
+//!   "egress_ca_bundle_hex": "<hex-PEM>",
+//!   "attestation_servers": [
+//!     {"url": "https://as.privasys.org", "token": "<api-key>"}
+//!   ]
+//! }
+//! ```
+//!
+//! Per-key access (owner / managers / auditors / TEE callers) lives in
+//! each `KeyPolicy` attached at `CreateKey` time, not in vault-wide
+//! config. The vault enforces only what the policy says.
 //!
 //! ## Build
 //!
@@ -36,13 +62,13 @@ use enclave_os_vault::VaultModule;
 
 /// Enclave entry point that registers Egress + KvStore + Vault modules.
 ///
-/// Expected JSON config keys (in addition to core fields like `port`):
+/// Extra JSON config keys consumed by this composition (in addition to
+/// the standard `EnclaveConfig` fields like `port`, `oidc`, `ca_cert_hex`):
 ///
 /// | Key | Type | Description |
 /// |-----|------|-------------|
 /// | `egress_ca_bundle_hex` | `string` | Hex-encoded PEM CA bundle for outbound HTTPS |
-/// | `attestation_servers` | `string[]` | Attestation server URLs (e.g. `["https://as.privasys.org/verify"]`) |
-/// | `vault_jwt_pubkey_hex` | `string` | Uncompressed P-256 public key (65 bytes, hex) |
+/// | `attestation_servers` | `[{url, token}]` | Attestation server entries |
 #[no_mangle]
 pub extern "C" fn ecall_run(config_json: *const u8, config_len: u64) -> i32 {
     let (config, sealed_cfg) = match init_enclave(config_json, config_len) {
@@ -84,26 +110,28 @@ pub extern "C" fn ecall_run(config_json: *const u8, config_len: u64) -> i32 {
     };
     register_module(Box::new(kvstore));
 
-    // ── 3. Vault module (policy-gated secrets) ───────────────────────
+    // ── 3. Vault module (per-key policy enforcer) ────────────────────
+    //
+    // VaultModule has no constructor arguments: all access decisions are
+    // made against the per-key `KeyPolicy` that the secret owner attached
+    // at `CreateKey` time. OIDC verification is wired by the core enclave
+    // from `config.oidc`; without it, any RPC requiring an OIDC principal
+    // will be rejected.
 
-    let pubkey_hex = match config.extra.get("vault_jwt_pubkey_hex").and_then(|v| v.as_str()) {
-        Some(hex) => hex,
-        None => {
-            enclave_log_error!("Missing required config: vault_jwt_pubkey_hex");
-            return -32;
-        }
-    };
+    if config.oidc.is_none() {
+        enclave_log_error!(
+            "VaultModule requires `oidc` in EnclaveConfig (CreateKey, ExportKey, \
+             UpdatePolicy, IssueApprovalToken etc. all require an OIDC bearer)"
+        );
+        return -32;
+    }
 
-    let vault = match VaultModule::new(pubkey_hex) {
-        Ok(m) => m,
-        Err(e) => {
-            enclave_log_error!("VaultModule init failed: {}", e);
-            return -33;
-        }
-    };
-    register_module(Box::new(vault));
+    register_module(Box::new(VaultModule::new()));
 
-    enclave_log_info!("All modules registered (Vault composition: egress + kvstore + vault)");
+    enclave_log_info!(
+        "All modules registered (vault composition: egress + kvstore + vault)"
+    );
 
     finalize_and_run(&config, &sealed_cfg)
 }
+

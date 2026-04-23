@@ -1,0 +1,25 @@
+# Caddyfile for the development Attested Registry on
+# u.registry.vaults.privasys.org.
+#
+# Caddy will request and renew a Let's Encrypt cert automatically once the
+# DNS A record for u.registry.vaults.privasys.org points at this VM and
+# ports 80 + 443 are reachable from the public internet.
+
+u.registry.vaults.privasys.org {
+	encode zstd gzip
+
+	# Forward everything to the registry process.
+	reverse_proxy registry:8080
+
+	# Reasonable security headers.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options    "nosniff"
+		Referrer-Policy           "no-referrer"
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

@@ -83,14 +83,22 @@ Each instance:
 ```json
 {
     "port": 8443,
-    "modules": ["kvstore", "vault"],
-    "vault_jwt_pubkey_hex": "<owner-p256-public-key-hex>",
-    "registry": {
-        "url": "https://registry.example.com/api/register",
-        "heartbeat_interval_seconds": 30
-    }
+    "oidc": {
+        "issuer":   "https://privasys.id",
+        "audience": "privasys-platform",
+        "jwks_uri": "https://privasys.id/jwks"
+    },
+    "attestation_servers": [
+        "https://as.privasys.org/verify"
+    ],
+    "egress_ca_bundle_hex": "<hex-encoded-PEM-CA-bundle>"
 }
 ```
+
+> Per-key access (owner / managers / auditors / TEE callers) lives in
+> each `KeyPolicy` attached at `CreateKey` time, not in vault-wide
+> config. Vault-wide policy here only covers OIDC + the platform
+> `manager` role for runtime config updates.
 
 ## 3. Verify the Constellation
 

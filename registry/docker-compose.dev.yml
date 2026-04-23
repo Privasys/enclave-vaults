@@ -1,0 +1,62 @@
+# Copyright (c) Privasys. All rights reserved.
+# Licensed under the GNU Affero General Public License v3.0. See LICENSE file for details.
+#
+# Compose file for the development deployment of the Attested Registry on a
+# small GCP VM. The registry sits behind Caddy, which terminates TLS for
+# `u.registry.vaults.privasys.org` (the leading `u.` denotes "unattested" —
+# i.e. running on a regular VM rather than inside a Confidential VM; in
+# production the entry will be promoted to `registry.vaults.privasys.org`
+# running inside enclave-os-virtual on TDX).
+#
+# Bring up:
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# Update:
+#   docker compose -f docker-compose.dev.yml pull
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# Required environment (place in a sibling `.env` file or export):
+#   ATTESTATION_VERIFY_URL  e.g. https://as.privasys.org/verify
+#   ATTESTATION_API_KEY     bearer token for the attestation server
+#
+# Optional:
+#   VAULT_TTL_SECONDS       seconds without heartbeat before eviction (default 60)
+
+services:
+  registry:
+    image: registry:dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vaults-registry
+    restart: unless-stopped
+    environment:
+      LISTEN_ADDR: ":8080"
+      ATTESTATION_VERIFY_URL: "${ATTESTATION_VERIFY_URL:?required}"
+      ATTESTATION_API_KEY: "${ATTESTATION_API_KEY:?required}"
+      VAULT_TTL_SECONDS: "${VAULT_TTL_SECONDS:-60}"
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8080/api/vaults"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: vaults-registry-caddy
+    restart: unless-stopped
+    depends_on:
+      - registry
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
