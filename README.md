@@ -58,7 +58,7 @@ Every key carries a `KeyPolicy` with three independent surfaces:
 
 The enclave-upgrade story (when a customer app's MRENCLAVE changes from `v(N)` to `v(N+1)`) is built on a single primitive: `StagePendingProfile` puts the new measurement in a `pending` slot; `PromotePendingProfile` requires the configured manager approvals before it merges into `policy.attestation_profiles`. The platform never auto-grants new measurements access to customer key material — that's a protocol invariant, not a UX choice.
 
-See [`docs/architecture.md`](docs/architecture.md) for the full schema and policy evaluator description, and [the vault plan](https://github.com/Privasys/.operations/blob/main/plans/vault-plan.md) for the design rationale.
+See [`docs/architecture.md`](docs/architecture.md) for the full schema and policy evaluator description.
 
 ## OIDC
 
