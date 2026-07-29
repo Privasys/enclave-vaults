@@ -1,6 +1,8 @@
 # Enclave Vaults — Deployment Guide
 
-This guide covers deploying a complete Enclave Vaults constellation: the Attested Registry and N vault instances.
+This guide covers deploying an Enclave Vaults constellation: N vault instances plus a discovery **directory**.
+
+> **Note.** The standalone Attested Registry is decommissioned. Discovery is now a directory served by the Privasys management service (`GET /api/v1/vaults`): you register the constellation + its member vaults through the portal (Admin → Vaults) or the admin API, and clients read the active set from there. The trust model is unchanged — the directory is an untrusted phonebook and the client SDK verifies each vault's quote itself. References to the "Registry VM" below apply only to the retired standalone component.
 
 ## Prerequisites
 

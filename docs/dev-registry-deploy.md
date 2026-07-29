@@ -1,5 +1,10 @@
 # Attested Registry — Development Deployment
 
+> **⚠ DECOMMISSIONED.** The standalone Attested Registry has been retired in
+> favour of the management-service vault **directory** (`GET /api/v1/vaults`).
+> Kept for historical reference only.
+
+
 This document describes the **development** deployment of the Attested
 Registry on a small Google Cloud VM, fronted by Caddy at
 `u.registry.vaults.privasys.org`. The leading `u.` indicates the registry

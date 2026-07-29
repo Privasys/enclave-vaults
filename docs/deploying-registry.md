@@ -1,5 +1,12 @@
 # Deploying the Attested Registry to Enclave OS (Virtual)
 
+> **⚠ DECOMMISSIONED.** The standalone Attested Registry has been retired.
+> Vault discovery is now a **directory** served by the Privasys management
+> service (`GET /api/v1/vaults`); see the README and `architecture.md`. This
+> document is kept for historical reference only and does not describe a live
+> deployment.
+
+
 This guide walks through building, pushing, and loading the Attested Registry
 container into a running Enclave OS (Virtual) instance (e.g. `m1`).
 

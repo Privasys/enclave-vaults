@@ -3,6 +3,14 @@
 This document describes the **manual** deployment of the Enclave Vault
 on the Privasys SGX bare-metal hosts in **Paris** and **London**.
 
+> **Note (discovery has changed).** The steps below that self-register a vault
+> with the standalone registry (`u.registry.vaults.privasys.org`,
+> `/api/vaults`, heartbeats) are **superseded**. Vaults no longer self-register;
+> a constellation and its member vaults are registered in the management-service
+> **directory** (portal Admin → Vaults, or the admin API) and clients discover
+> them via `GET /api/v1/vaults`. The enclave launch, KV, CA, and sealing steps
+> are current; ignore the registry-specific commands.
+
 > **Status:** procedural draft. Both hosts are provisioned but no vault
 > instance has been launched yet at the time of writing. Update this
 > file as the first deployment is performed.

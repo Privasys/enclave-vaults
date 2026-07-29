@@ -29,9 +29,9 @@
 **Attack:** An attacker deploys a modified vault binary that leaks shares.
 
 **Mitigation:**
-- Every vault's attestation quote includes its MRENCLAVE measurement (SHA-256 of the enclave code). The registry verifies this measurement via the attestation server before listing the vault.
-- Clients can verify MRENCLAVE values in the vault list returned by the registry.
-- Secret policies include MRENCLAVE whitelists — even if a rogue vault registers, no existing secret will release a share to it.
+- Every vault's attestation quote includes its MRENCLAVE measurement (SHA-256 of the enclave code). The client SDK verifies this measurement itself, against the constellation's pin, during the RA-TLS handshake — it does not delegate that check to the directory.
+- The directory only lists `(endpoint, measurement)` tuples; a rogue endpoint it points at cannot produce a valid SGX quote with the expected MRENCLAVE, so the client drops it.
+- Key policies include MRENCLAVE / measurement whitelists (`attestation_profiles`) — even if a rogue vault appeared, no existing key would release a share or perform an operation for it.
 
 ### Threat 4: Replay Attack
 
@@ -41,15 +41,25 @@
 - Challenge-response RA-TLS: the client sends a random nonce in the TLS ClientHello (extension 0xFFBB). The vault generates a fresh RA-TLS certificate binding: `REPORTDATA = SHA-512(SHA-256(pubkey) || nonce)`. A replayed certificate will fail the nonce check.
 - Bidirectional: for vault-to-vault or vault-to-TEE communication, both sides perform challenge-response.
 
-### Threat 5: Compromised Registry
+### Threat 5: Compromised Directory
 
-**Attack:** The registry returns a fake vault list pointing to attacker-controlled endpoints.
+**Attack:** The directory (the platform's management service, exposed at `GET /api/v1/vaults`) returns a fake vault list pointing to attacker-controlled endpoints.
 
 **Mitigation:**
-- The registry runs inside a TDX Confidential VM. Clients verify the registry's TDX attestation via RA-TLS before trusting the vault list.
-- Even if the registry is compromised, the client independently verifies each vault's RA-TLS certificate (containing the attestation quote). An attacker-controlled endpoint cannot produce a valid SGX quote with the correct MRENCLAVE.
+- The directory is treated as untrusted. The client independently verifies each vault's RA-TLS certificate (containing the attestation quote) against the constellation's MRENCLAVE pin. An attacker-controlled endpoint cannot produce a valid SGX quote with the expected measurement, so it is dropped.
+- The directory never holds keys, shares, policies, pending profiles, approval tokens, or audit data. A full compromise of it leaks endpoints and measurements only.
 
-### Threat 6: Quantum Computer
+### Threat 6: A retired app/enclave version retains key access
+
+**Attack:** After an app is upgraded from `v(N)` to `v(N+1)`, an attacker runs the old `v(N)` build (or exploits a bug in it) to reconstruct a key the app should no longer expose through that version.
+
+**Mitigation:**
+- Promoting a new measurement is deliberately *additive* (so deploys can roll back), which means the old measurement stays authorised until it is retired. Retirement is a first-class, separate step: the owner lists the authorised measurements and revokes superseded ones via `UpdatePolicy`, which removes the old `Tee` from the policy so that version can no longer satisfy `AttestationMatches`.
+- Guards keep it safe: the **current running measurement can never be retired** (its running deployment is the proof it holds the key), and the last remaining measurement cannot be removed, so revocation never bricks the key.
+
+**Residual risk:** between promoting `v(N+1)` and retiring `v(N)`, both versions are authorised by design. Retire promptly once `v(N+1)` is confirmed healthy; policies that must not tolerate the overlap can additionally gate the operation on a fresh manager approval or wallet step-up.
+
+### Threat 7: Quantum Computer
 
 **Attack:** A future quantum computer breaks the cryptographic primitives (AES, ECDSA, SHA-256).
 
@@ -84,13 +94,8 @@ The unique property of Enclave Vaults is that compromising fewer than K nodes pr
 | rustls | ~10K LoC (Rust) | TLS 1.3 |
 | **No WASM runtime** | — | Excluded to minimise TCB |
 
-By excluding the WASM runtime, the vault's TCB is significantly smaller than a general-purpose enclave-os-mini deployment.
+By excluding the WASM runtime, the vault's TCB is significantly smaller than a general-purpose enclave-os-mini deployment. (`P256SigningKey` pre-hashed signing adds a small RustCrypto `p256` dependency alongside `ring`, since `ring` has no raw-digest ECDSA API.)
 
-### Registry TCB
+### Directory is NOT in the TCB
 
-| Component | Size | Description |
-|-----------|------|-------------|
-| Intel TDX CPU | — | Hardware root of trust |
-| enclave-os-virtual | ~3K LoC (Go) | TDX boot, container launcher, Merkle tree |
-| Registry service | ~300 LoC (Go) | HTTP server, vault store, attestation verification |
-| Caddy RA-TLS module | — | RA-TLS TLS termination |
+Discovery is a **vault directory** served by the platform's management service (it replaced the standalone Attested Registry). It is deliberately *outside* the trusted computing base: it holds only `(endpoint, measurement)` tuples, and the client SDK verifies every vault's quote itself. A compromised directory can at most point at endpoints that fail attestation and are dropped — it can neither read nor influence key material, policy, or approvals. So it carries no TCB weight, and none of the earlier "trust the registry" assumptions apply.
