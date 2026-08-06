@@ -9,7 +9,7 @@ OVH Cloud provides both SGX-capable bare metal servers (for vaults) and Confiden
 Order an OVH Advance-1 Gen2 (or equivalent) with Intel SGX support:
 - Enable SGX in BIOS (usually pre-configured on OVH SGX-capable servers)
 - Install Ubuntu 22.04 or 24.04
-- Install Intel SGX DCAP driver and PCCS
+- Install Intel SGX DCAP driver (no local PCCS needed; the QPL calls Intel PCS API v4 directly, see step 3)
 
 ### 2. Install SGX Prerequisites
 
@@ -28,9 +28,10 @@ sudo apt install -y \
     sgx-aesm-service
 ```
 
-### 3. Configure PCCS
+### 3. Configure the Quote Provider (QPL)
 
-Edit `/etc/sgx_default_qcnl.conf` to point to Intel's PCS:
+Edit `/etc/sgx_default_qcnl.conf` to point directly at Intel's PCS (API **v4**;
+API v3 is end of life -- do not use v3 URLs or a pre-1.27 PCCS):
 
 ```json
 {
