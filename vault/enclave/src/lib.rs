@@ -48,7 +48,8 @@
 // symbols resolve correctly (the sysroot provides them).
 extern crate enclave_os_enclave;
 
-use enclave_os_enclave::ecall::{init_enclave, finalize_and_run, hex_decode};
+use enclave_os_common::hex::hex_decode;
+use enclave_os_enclave::ecall::{finalize_and_run, init_enclave};
 use enclave_os_enclave::modules::register_module;
 use enclave_os_enclave::{enclave_log_info, enclave_log_error};
 
@@ -84,12 +85,18 @@ pub extern "C" fn ecall_run(config_json: *const u8, config_len: u64) -> i32 {
         .and_then(|v| v.as_str())
         .and_then(|hex| hex_decode(hex));
 
-    let attestation_servers: Option<Vec<String>> = config
+    // Attestation servers live in the core registry (their canonical hash is
+    // stamped into the certificate at OID 2.3); the egress module reads them
+    // from there when it verifies a peer's evidence.
+    let attestation_servers: Vec<enclave_os_common::protocol::AttestationServer> = config
         .extra
         .get("attestation_servers")
-        .and_then(|v| serde_json::from_value(v.clone()).ok());
+        .map(|v| serde_json::from_value(v.clone()).unwrap_or_default())
+        .unwrap_or_default();
+    let (as_count, _as_hash) = enclave_os_common::attestation_servers::init(attestation_servers);
+    enclave_log_info!("attestation servers: {} configured", as_count);
 
-    let (egress, cert_count) = match EgressModule::new(egress_pem, attestation_servers) {
+    let (egress, cert_count) = match EgressModule::new(egress_pem) {
         Ok(pair) => pair,
         Err(e) => {
             enclave_log_error!("EgressModule init failed: {}", e);
