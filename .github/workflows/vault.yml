@@ -70,7 +70,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: Privasys/enclave-os-mini
-          ref: ${{ inputs.mini_ref || '8e43c9df004c88ce71ad5ba1e62720de7b61639e' }}
+          ref: ${{ inputs.mini_ref || '463f005ea76a2758f8688cd11f47b353817ed67d' }}
           path: enclave-os-mini
           token: ${{ secrets.GITHUB_TOKEN }}
 
