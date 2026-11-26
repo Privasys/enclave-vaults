@@ -1,6 +1,6 @@
-# Enclave Vault — Build & Deployment
+# Enclave Vault: Build & Deployment
 
-The Enclave Vault is a build of [enclave-os-mini](https://github.com/Privasys/enclave-os-mini) with the `vault` module enabled.  This pulls in `enclave-os-vault`, `enclave-os-kvstore`, and `enclave-os-egress` — keeping the Trusted Computing Base (TCB) as small as possible.
+The Enclave Vault is a build of [enclave-os-mini](https://github.com/Privasys/enclave-os-mini) with the `vault` module enabled. This pulls in `enclave-os-vault`, `enclave-os-kvstore`, and `enclave-os-egress`, keeping the Trusted Computing Base (TCB) as small as possible.
 
 ## Architecture
 
@@ -11,10 +11,10 @@ The Enclave Vault is a build of [enclave-os-mini](https://github.com/Privasys/en
 │  ┌─────────────┐  ┌───────────────────────────┐  │
 │  │  RA-TLS     │  │  VaultModule              │  │
 │  │  (rustls)   │  │                           │  │
-│  │             │  │  StoreSecret  (ES256 JWT) │  │
-│  │  TLS 1.3    │  │  GetSecret   (mRA-TLS)    │  │
-│  │  + SGX      │  │  DeleteSecret (ES256 JWT) │  │
-│  │  attestation│  │  UpdatePolicy (ES256 JWT) │  │
+│  │             │  │  CreateKey     (grant)    │  │
+│  │  TLS 1.3    │  │  Wrap / Sign   (policy)   │  │
+│  │  + SGX      │  │  FROST rounds (policy)    │  │
+│  │  attestation│  │  UpdatePolicy (approval)  │  │
 │  │  cert       │  │                           │  │
 │  └──────┬──────┘  └──────────┬────────────────┘  │
 │         │                    │                   │
@@ -40,9 +40,7 @@ The Enclave Vault is a build of [enclave-os-mini](https://github.com/Privasys/en
 
 ## How It Works
 
-The enclave-os-mini crate uses **composable Cargo features** to control which
-modules are compiled in.  The `vault` feature implies `kvstore` + `egress`, so
-a single CMake flag enables the entire vault stack:
+The enclave-os-mini crate uses **composable Cargo features** to control which modules are compiled in. The `vault` feature implies `kvstore` + `egress`, so a single CMake flag enables the entire vault stack. The released vault is built this way, by `.github/workflows/vault.yml`:
 
 ```bash
 cmake -DENABLE_VAULT=ON …
@@ -50,13 +48,11 @@ cmake -DENABLE_VAULT=ON …
 
 At startup, the default `ecall_run` registers:
 
-1. **EgressModule** — outbound HTTPS, attestation server URLs, hashed into
-   config Merkle tree (OID `1.3.6.1.4.1.65230.2.4`)
-2. **KvStoreModule** — sealed KV store with MRENCLAVE-bound master key
-3. **VaultModule** — policy-gated secret storage (JWT + Mutual RA-TLS)
+1. **EgressModule**: outbound HTTPS, attestation server URLs, hashed into config Merkle tree (OID `1.3.6.1.4.1.65230.2.4`)
+2. **KvStoreModule**: sealed KV store with MRENCLAVE-bound master key
+3. **VaultModule**: policy-gated key store (OIDC bearers + mutual RA-TLS), see [`docs/vault.md`](https://github.com/Privasys/enclave-os-mini/blob/main/docs/vault.md)
 
-Features compose freely — `-DENABLE_VAULT=ON -DENABLE_WASM=ON` would give
-you a vault *and* WASM runtime in the same enclave.
+Features compose freely: `-DENABLE_VAULT=ON -DENABLE_WASM=ON` would give you a vault *and* WASM runtime in the same enclave.
 
 ### Advanced: Custom Composition Crate
 
@@ -66,11 +62,9 @@ For fully custom `ecall_run` logic, use `CUSTOM_ENCLAVE_DIR` instead:
 cmake -DCUSTOM_ENCLAVE_DIR=/path/to/my-custom-enclave …
 ```
 
-The external crate must depend on `enclave-os-enclave` with
-`default-features = false, features = ["sgx"]` and provide its own
-`#[no_mangle] pub extern "C" fn ecall_run(…)`.
+The external crate must depend on `enclave-os-enclave` with `default-features = false, features = ["sgx"]` and provide its own `#[no_mangle] pub extern "C" fn ecall_run(…)`.
 
-An example composition crate is provided in [`vault/enclave/`](enclave/).
+An example composition crate is provided in [`vault/enclave/`](enclave/). The released vault does not use it.
 
 ## Prerequisites
 
@@ -78,9 +72,9 @@ An example composition crate is provided in [`vault/enclave/`](enclave/).
 |------|---------|---------|
 | Intel SGX SDK + PSW | 2.25+ | See [OVH install guide](../install/OVH%20Cloud.md) |
 | Rust | nightly-2025-12-01 | `rustup install nightly-2025-12-01` |
-| rust-src | — | `rustup component add rust-src --toolchain nightly-2025-12-01` |
+| rust-src | any | `rustup component add rust-src --toolchain nightly-2025-12-01` |
 | CMake | 3.16+ | `sudo apt install cmake` |
-| Build tools | — | `sudo apt install build-essential pkg-config` |
+| Build tools | any | `sudo apt install build-essential pkg-config` |
 
 ## Building
 
@@ -112,10 +106,9 @@ sgx_sign dump -enclave build/bin/enclave.signed.so -dumpfile /dev/stdout \
     | grep "mr_enclave"
 ```
 
-Record this value — it's used in:
-- Secret policies (restrict which enclaves can access secrets)
-- Client verification (ensure you're talking to the correct vault binary)
-- Registry configuration (verify vault registrations)
+Record this value. It is used in:
+- Client verification (ensure you're talking to the correct vault binary, and pin it before trusting `GetVaultIdentity`)
+- The vault directory (the constellation's member vaults and their measurement)
 - GitHub releases (so users can verify reproducible builds)
 
 ## Configuration
@@ -144,9 +137,7 @@ Record this value — it's used in:
 | `--attestation-servers` | No | Comma-separated attestation server URLs |
 | `--debug` / `-d` | No | Enable debug logging |
 
-> **Note:** `--ca-cert` and `--ca-key` are only required on first run. The
-> enclave seals them to disk (MRENCLAVE-bound AES-256-GCM) and reads them
-> automatically on subsequent restarts.
+> **Note:** `--ca-cert` and `--ca-key` are only required on first run. The enclave seals them to disk (MRENCLAVE-bound AES-256-GCM) and reads them automatically on subsequent restarts.
 
 ## Running
 
@@ -169,7 +160,7 @@ Each vault instance needs a unique port and its own KV store directory:
 
 ```bash
 #!/bin/bash
-# launch-vaults.sh — start N vault instances on consecutive ports
+# launch-vaults.sh: start N vault instances on consecutive ports
 BASE_PORT=${1:-8443}
 COUNT=${2:-2}
 ENCLAVE="enclave.signed.so"
