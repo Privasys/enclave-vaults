@@ -5,3 +5,6 @@ registry/dist/
 # IDE
 .idea/
 .vscode/
+
+# A stale lock of the vault enclave crate; CI never builds it on its own.
+vault/enclave/Cargo.lock

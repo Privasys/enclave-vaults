@@ -24,9 +24,9 @@ on:
   workflow_dispatch:
     inputs:
       mini_ref:
-        description: "enclave-os-mini git ref (tag, branch, or SHA)"
+        description: "enclave-os-mini git ref (tag, branch, or SHA); leave empty to build the pinned SHA"
         type: string
-        default: "main"
+        default: ""
 
 permissions:
   contents: write
